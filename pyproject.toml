@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "svgslide"
+version = "0.1.0"
+description = "Convert an SVG drawing or a PDF into an editable PowerPoint (.pptx) file"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Krystian Łazowski", email = "k.lazowski@exeter.ac.uk" }]
+requires-python = ">=3.9"
+dependencies = []
+keywords = ["svg", "pdf", "pptx", "powerpoint", "drawingml", "matplotlib", "figures", "converter"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+    "Topic :: Office/Business :: Office Suites",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
+[project.urls]
+Homepage = "https://github.com/krystianll/svgslide"
+Issues = "https://github.com/krystianll/svgslide/issues"
+Changelog = "https://github.com/krystianll/svgslide/blob/main/CHANGES.md"
+
+[project.optional-dependencies]
+# 5.14: first release whose PDFium tells pattern paints apart
+pdf = ["pypdfium2>=5.14"]
+
+[project.scripts]
+svgslide = "svgslide.__main__:main"
+
+[tool.setuptools]
+packages = ["svgslide"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
