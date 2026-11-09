@@ -22,6 +22,7 @@ import svgslide
 
 svgslide.convert("figure.svg", "figure.pptx")
 svgslide.convert("figure.pdf", "figure.pptx", pages=[1, 3])
+svgslide.convert(["a.svg", "b.pdf"], "talk.pptx")   # one deck
 svgslide.convert_figure(fig, "figure.pptx")      # a Matplotlib figure
 ```
 
@@ -41,23 +42,37 @@ Options (both functions):
   for smaller files.
 - `format`: `"pptx"` or `"svg"`; a destination ending in `.svg` writes the
   converted drawing as SVG, for editors that do not open `.pptx`.
+- `scale`: make the whole drawing (text, lines and pictures too) larger or
+  smaller, e.g. `scale=2`.
+- `width`, `height`: the figure's final size instead, e.g. `width="20cm"`
+  (cm, mm, in, pt, px; a plain number is points); the other side follows.
+- `canvas_size`: the slide size, with the figure centred on it:
+  `"widescreen"`, `"4:3"`, `"A4"`, `"A4-portrait"` or e.g. `"25cm x 14cm"`.
+  A larger figure is shrunk to fit.
+
+A list of sources gives one deck: one slide per SVG and per PDF page, each
+figure at its own size, centred on slides as large as the largest figure.
 
 Each call returns a report with the counts of shapes, text boxes, pictures
-and groups, the fonts found, and the SVG or PDF features it could not
-convert.
+and groups, the fonts found, the SVG or PDF features it could not convert,
+and notes such as a figure shrunk to fit.
 
 ## Command line
 
 ```sh
 svgslide INPUT... [-o OUTPUT] [--font NAME|OLD=NEW]... [--pages LIST]
          [--merge N|none] [--merge-scope group|touching|figure] [--precision PT]
+         [--scale F | --width SIZE | --height SIZE] [--canvas-size SIZE]
 ```
 
 Each input (`.svg`, `.svgz` or `.pdf`) gives a `.pptx` next to it, or
-`-o OUTPUT` (`.pptx` or `.svg`) for a single input. `--font sans-serif=Arial`
+`-o OUTPUT` (`.pptx` or `.svg`) for a single input; several inputs with
+`-o talk.pptx` give one deck. `--font sans-serif=Arial`
 replaces one font, a bare `--font Arial` every font not named, so
-`--font Arial --font "Symbol=Symbol"` keeps Symbol. The fonts found and
-anything that could not be converted are printed for each file.
+`--font Arial --font "Symbol=Symbol"` keeps Symbol. `--scale`, `--width`,
+`--height` and `--canvas-size` work as in Python (`--width 20cm`,
+`--canvas-size widescreen`). The fonts found and anything that could not be
+converted are printed for each file.
 
 ## What is converted
 

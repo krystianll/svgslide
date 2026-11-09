@@ -632,8 +632,11 @@ def _rect_contains(subs, bounds):
             ys[0] - tol <= bounds[1] and bounds[3] <= ys[1] + tol)
 
 
-def read(data, pages):
-    """[(svg root, page number, skipped)] for the pages asked for."""
+def read(data, pages, fit=True):
+    """[(svg root, page number, skipped)] for the pages asked for.
+
+    fit: later pages are scaled to fit the first page's size and centred;
+    False: every page keeps its own size."""
     pdfium, raw = _pdfium()
     try:
         doc = pdfium.PdfDocument(data)
@@ -648,7 +651,7 @@ def read(data, pages):
             try:
                 p = _Page(raw, doc.raw, page.raw, n, size)
                 root = p.read()
-                if size is None:
+                if size is None and fit:
                     size = (p.w, p.h)
                 out.append((root, n, p.skipped))
             finally:

@@ -199,6 +199,88 @@ def test_slide_size_follows_drawing(attrs, expected):
     assert rep.slide_size == expected
 
 
+# New test, not a widened one: test_slide_size_follows_drawing reads the size
+# from the SVG's own attributes; these cases add the size options, and check
+# where the whole drawing lands and how large its parts become.
+IN, CM = 914400, 360000
+POINT = IN // 72     # EMU
+_FIGURE = ('<rect x="10" y="10" width="50" height="20" fill="red" stroke="black" stroke-width="2"/>'
+           '<text x="10" y="80" font-size="12">Sample A</text>'
+           '<image x="150" y="10" width="20" height="20" xlink:href="%s"/>' % data_uri(png([[(1, 2, 3)]])))
+
+
+@pytest.mark.parametrize('figure, kw, slide, k, offset, note', [
+    pytest.param((200, 100), {}, (200 * EMU, 100 * EMU), EMU, (0, 0), None, id='default: 1 px = 1/96 inch'),
+    pytest.param((200, 100), {'scale': 2}, (400 * EMU, 200 * EMU), 2 * EMU, (0, 0), None,
+                 id='scale grows geometry, text, lines and pictures'),
+    pytest.param((200, 100), {'scale': 0.5}, (100 * EMU, IN), EMU / 2, (0, 0), None,
+                 id='scaled below 1 inch: the slide stays 1 inch, figure at top left'),
+    pytest.param((200, 100), {'width': '10cm'}, (10 * CM, 5 * CM), 10 * CM / 200, (0, 0), None,
+                 id='width in cm, height follows'),
+    pytest.param((200, 100), {'width': '4 in'}, (4 * IN, 2 * IN), 4 * IN / 200, (0, 0), None,
+                 id='width with a space before the unit'),
+    pytest.param((200, 100), {'height': '150px'}, (300 * EMU, 150 * EMU), 1.5 * EMU, (0, 0), None,
+                 id='height in px, width follows'),
+    pytest.param((200, 100), {'width': 300}, (300 * POINT, 150 * POINT), 300 * POINT / 200, (0, 0), None,
+                 id='plain number is points'),
+    pytest.param((200, 100), {'width': '300pt', 'height': 151}, (300 * POINT, 150 * POINT), 300 * POINT / 200, (0, 0),
+                 None, id='width and height within 1 percent of the aspect ratio'),
+    pytest.param((200, 100), {'width': '80mm'}, (80 * CM // 10, 40 * CM // 10), 80 * CM / 10 / 200, (0, 0),
+                 None, id='width in mm'),
+    pytest.param((200, 100), {'canvas_size': 'widescreen'}, (12192000, 6858000), EMU,
+                 ((12192000 - 200 * EMU) / 2, (6858000 - 100 * EMU) / 2), None,
+                 id='widescreen canvas: PowerPoint size, figure centred at its own size'),
+    pytest.param((200, 100), {'canvas_size': '4:3', 'scale': 2}, (9144000, 6858000), 2 * EMU,
+                 ((9144000 - 400 * EMU) / 2, (6858000 - 200 * EMU) / 2), None, id='4:3 canvas with scale'),
+    pytest.param((200, 100), {'canvas_size': 'a4'}, (29.7 * CM, 21 * CM), EMU,
+                 ((29.7 * CM - 200 * EMU) / 2, (21 * CM - 100 * EMU) / 2), None,
+                 id='A4 is landscape, names ignore case'),
+    pytest.param((200, 100), {'canvas_size': 'A4-portrait', 'width': '40cm'}, (21 * CM, 29.7 * CM),
+                 21 * CM / 200, (0, (29.7 * CM - 10.5 * CM) / 2), 'scaled to 52.5% to fit the canvas',
+                 id='figure larger than the canvas is shrunk to fit and centred'),
+    pytest.param((200, 100), {'canvas_size': '25cm x 14cm'}, (25 * CM, 14 * CM), EMU,
+                 ((25 * CM - 200 * EMU) / 2, (14 * CM - 100 * EMU) / 2), None, id='custom canvas with units'),
+    pytest.param((200, 100), {'canvas_size': '10inx5in'}, (10 * IN, 5 * IN), EMU,
+                 ((10 * IN - 200 * EMU) / 2, (5 * IN - 100 * EMU) / 2), None, id='custom canvas without spaces'),
+    pytest.param((200, 100), {'canvas_size': (720, 360)}, (720 * POINT, 360 * POINT), EMU,
+                 ((720 * POINT - 200 * EMU) / 2, (360 * POINT - 100 * EMU) / 2), None, id='canvas tuple in points'),
+    pytest.param((200, 100), {'scale': 100}, (56 * IN, 28 * IN), 56 * IN / 200, (0, 0),
+                 "scaled to 26.9% to fit PowerPoint's 56-inch slide limit", id='scaled past 56 inch: limit and note'),
+    pytest.param((10000, 1000), {}, (56 * IN, 5.6 * IN), 56 * IN / 10000, (0, 0),
+                 "scaled to 53.8% to fit PowerPoint's 56-inch slide limit",
+                 id='drawing past 56 inch without options: note too'),
+])
+def test_size_options_place_the_whole_drawing(figure, kw, slide, k, offset, note):
+    s, rep = convert(svg(_FIGURE, *figure), **kw)
+    assert s.size == rep.slide_size == tuple(int(round(v)) for v in slide)
+    ox, oy = offset
+    rect, = s.objects('shape')
+    assert all(abs(g - v) <= 2 for g, v in zip(box(rect)[:4], (ox + 10 * k, oy + 10 * k, 50 * k, 20 * k)))
+    assert abs(int(line_of(rect).get('w')) - 2 * k) <= 1
+    pic, = s.objects('picture')
+    assert all(abs(g - v) <= 2 for g, v in zip(box(pic)[:4], (ox + 150 * k, oy + 10 * k, 20 * k, 20 * k)))
+    sz = int(s.objects('text')[0].find('.//a:rPr', NS).get('sz'))
+    assert abs(sz - 12 * k / POINT * 100) <= 1                     # hundredths of a point
+    assert rep.notes == ([] if note is None else [note])
+
+
+def test_size_and_deck_options_are_checked():
+    fig = svg('<rect width="5" height="5"/>', 200, 100)
+    for kw, match in [({'scale': 0}, 'scale'), ({'scale': float('inf')}, 'scale'), ({'scale': '2'}, 'scale'),
+                      ({'scale': True}, 'scale'), ({'scale': 2, 'width': '3cm'}, 'not both'),
+                      ({'width': '3 furlongs'}, 'width'), ({'width': -3}, 'width'), ({'height': '0cm'}, 'height'),
+                      ({'width': '10cm', 'height': '10cm'}, 'aspect ratio'),
+                      ({'canvas_size': 'huge'}, 'canvas_size'), ({'canvas_size': (720,)}, 'canvas_size'),
+                      ({'canvas_size': '0.5in x 3in'}, '56 inch'), ({'canvas_size': '57in x 3in'}, '56 inch'),
+                      ({'canvas_size': '25cm'}, 'canvas_size')]:
+        with pytest.raises(ValueError, match=match):
+            convert(fig, **kw)
+    for source, kw, match in [([], {}, 'empty'), ([fig, fig], {'pages': 1}, 'one source'),
+                              ([fig, fig], {'format': 'svg'}, 'one page')]:
+        with pytest.raises(ValueError, match=match):
+            convert(source, **kw)
+
+
 def test_package_is_complete_deterministic_and_accepts_every_input_kind(tmp_path):
     src = svg('<rect id="r" x="10" y="10" width="50" height="20" fill="red"/>'
               '<image x="0" y="0" width="4" height="4" xlink:href="%s"/>' % data_uri(png([[(1, 2, 3)]])))
@@ -1058,6 +1140,42 @@ def test_pdf_pages_become_slides(pages, expected):
     assert convert(data, pages=pages)[0].data == s.data
 
 
+# New test, not a widened one: the tests above convert one source; this one a
+# list of sources into one deck (and PDF pages on a canvas, which keep their size).
+@pytest.mark.parametrize('kind', ['svg', pytest.param('pdf', marks=needs_pdfium)])
+def test_several_sources_make_one_deck(kind, tmp_path):
+    a = tmp_path / 'a.svg'
+    a.write_bytes(svg('<filter id="f"/><rect id="r" width="200" height="100" filter="url(#f)"/>', 200, 100).encode())
+    sources = [a, svg('<rect width="100" height="300"/>', 100, 300)]          # a path, then the SVG as text
+    sizes = [(200, 100), (100, 300)]                                         # px, one per slide
+    skipped = [('filter', 'a.svg #r')]
+    if kind == 'pdf':      # two pages of 150 x 75 pt and 300 x 60 pt (200 x 100 px and 400 x 80 px)
+        sources.append(pdf([(150, 75, '0 0 150 75 re f /Sh1 sh'), (300, 60, '0 0 300 60 re f')]))
+        sizes += [(200, 100), (400, 80)]
+        skipped.append(('shading (smooth colour gradient)', 'source 3 page 1 object 2'))
+    s, rep = convert(sources)
+    canvas = (max(w for w, _ in sizes) * EMU, max(h for _, h in sizes) * EMU)   # widest x tallest
+    assert s.size == rep.slide_size == canvas
+    assert sum(n.startswith('ppt/slides/slide') for n in s.zip.namelist()) == len(sizes)
+    for n, (w, h) in enumerate(sizes, 1):                                     # own size, centred
+        rect, = Slide(s.data, n).objects('shape')
+        want = ((canvas[0] - w * EMU) / 2, (canvas[1] - h * EMU) / 2, w * EMU, h * EMU)
+        assert all(abs(g - v) <= 2 for g, v in zip(box(rect)[:4], want)), n
+    assert rep.shapes == len(sizes) and rep.skipped == skipped and rep.notes == []
+    # on a canvas, a figure larger than it is shrunk; the note names the source and page
+    s, rep = convert(sources, canvas_size='4in x 3in')                        # 384 x 288 px
+    assert s.size == (4 * 914400, 3 * 914400)
+    assert rep.notes == ['source 2: scaled to 96% to fit the canvas'] + (
+        ['source 3 page 2: scaled to 96% to fit the canvas'] if kind == 'pdf' else [])
+    if kind == 'pdf':      # one PDF on a canvas: each page keeps its own size
+        s, rep = convert(sources[2], canvas_size='widescreen')
+        for n, (w, h) in enumerate(sizes[2:], 1):
+            rect, = Slide(s.data, n).objects('shape')
+            want = ((12192000 - w * EMU) / 2, (6858000 - h * EMU) / 2, w * EMU, h * EMU)
+            assert all(abs(g - v) <= 2 for g, v in zip(box(rect)[:4], want)), n
+        assert rep.skipped == [('shading (smooth colour gradient)', 'page 1 object 2')]
+
+
 def test_pdf_errors(monkeypatch):
     if HAVE_PDFIUM:
         data = pdf([(100, 100, '0 0 10 10 re f')])
@@ -1181,9 +1299,18 @@ def test_command_line(tmp_path, capsys):
     assert Slide((tmp_path / 'all.pptx').read_bytes()).tree.find(
         './/a:latin', NS).get('typeface') == 'Times New Roman'
     capsys.readouterr()
+    # several inputs with -o NAME.pptx: one deck, one stdout line; never into an input, never as SVG
+    deck = tmp_path / 'deck.pptx'
+    assert main([str(a), str(b), '-o', str(deck)]) == 0
+    assert sum(n.startswith('ppt/slides/slide') for n in Slide(deck.read_bytes()).zip.namelist()) == 2
+    assert capsys.readouterr().out.splitlines() == ['%s, %s -> %s: 1 shape, 1 text box, 0 pictures, 0 groups, '
+                                                    '0 merged, 0 skipped' % (a, b, deck)]
+    assert main([str(a), str(b), '-o', str(b)]) == 1 and b.read_bytes().startswith(b'\x1f\x8b')
+    assert main([str(a), str(b), '-o', str(tmp_path / 'deck.svg')]) == 2
+    assert not (tmp_path / 'deck.svg').exists()
+    capsys.readouterr()
     # usage errors: status 2
-    for argv in ([str(a), str(b), '-o', str(tmp_path / 'x.pptx')],
-                 [str(a), '--font', 'Arial', '--font', 'Times'],
+    for argv in ([str(a), '--font', 'Arial', '--font', 'Times'],
                  [str(a), '--pages', '3-1'], []):
         assert main(argv) == 2, argv
         assert 'usage' in capsys.readouterr().err
@@ -1221,6 +1348,23 @@ def test_command_line_merge_and_svg(tmp_path, capsys):
     for bad in (['--merge', '-1'], ['--merge', 'all'], ['--merge-scope', 'page']):
         assert main([str(a)] + bad) == 2, bad
         assert 'usage' in capsys.readouterr().err
+    # size flags; notes go to stderr, stdout keeps one line per file
+    for argv, size, note in ((['--scale', '2'], (400 * EMU, 200 * EMU), None),
+                             (['--width', '10cm'], (3600000, 1800000), None),
+                             (['--height', '3in'], (6 * 914400, 3 * 914400), None),
+                             (['--canvas-size', 'Widescreen'], (12192000, 6858000), None),
+                             (['--scale', '2', '--canvas-size', '4in x 1.5in'], (4 * 914400, 1371600),
+                              'note in %s: scaled to 72%% to fit the canvas' % a)):
+        assert main([str(a)] + argv) == 0, argv
+        assert Slide(out.read_bytes()).size == size, argv
+        res = capsys.readouterr()
+        assert len(res.out.splitlines()) == 1 and (note in res.err if note else 'note' not in res.err), argv
+    for bad in (['--scale', '0'], ['--scale', 'big'], ['--scale', '2', '--width', '3cm'], ['--width', '3 furlongs'],
+                ['--height', '-2cm'], ['--canvas-size', 'huge'], ['--canvas-size', '100in x 3in']):
+        assert main([str(a)] + bad) == 2, bad
+        assert 'usage' in capsys.readouterr().err
+    assert main([str(a), '--width', '10cm', '--height', '10cm']) == 1        # does not match this figure's shape
+    assert 'aspect ratio' in capsys.readouterr().err
 
 
 # --- optional: real-world corpus and render comparison -----------------------------------
@@ -1348,6 +1492,13 @@ def test_svg_output(tmp_path):
     fig = FakeFigure()
     svgslide.convert_figure(fig, tmp_path / 'fig.svg')
     assert [t.text for t in ET.parse(tmp_path / 'fig.svg').getroot().iter(SVG_NS + 'tspan')] == ['Sample A']
+    # size options reach convert_figure and the SVG: the canvas is the SVG's size, the drawing centred on it
+    svgslide.convert_figure(fig, tmp_path / 'big.svg', scale=2, canvas_size='widescreen')
+    root = ET.parse(tmp_path / 'big.svg').getroot()
+    assert (root.get('width'), root.get('height')) == ('1280', '720')              # 33.867 x 19.05 cm
+    text, = root.iter(SVG_NS + 'text')
+    assert abs(float(text.get('x')) - (440 + 2 * 10)) < 0.01 and abs(float(text.get('y')) - (260 + 2 * 50)) < 0.01
+    assert abs(float(text[0].get('font-size')) - 24) < 0.01
     with pytest.raises(ValueError):
         svgslide.convert(svg(body), io.BytesIO(), format='pdf')
 

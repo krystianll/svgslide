@@ -1,10 +1,10 @@
-"""Command line: ``svgslide INPUT... [-o OUTPUT] [--font OLD=NEW]... [--pages LIST]``."""
+"""Command line: ``svgslide INPUT... [-o OUTPUT] [--font OLD=NEW]... [--pages LIST] [--scale F]...``."""
 
 import argparse
 import os
 import sys
 
-from . import convert
+from . import _canvas, _length, convert
 from ._text import replace
 
 
@@ -47,6 +47,33 @@ def _precision(text):
     return v
 
 
+def _scale(text):
+    try:
+        v = float(text)
+    except ValueError:
+        v = -1.0
+    if not (v > 0 and v != float('inf')):
+        raise argparse.ArgumentTypeError('expected a positive number, got %r' % text)
+    return v
+
+
+def _size(text):
+    try:
+        _length(text, 'size')
+    except ValueError:
+        raise argparse.ArgumentTypeError('expected a size such as 20cm, 80mm, 4in, 300pt or 400px (a plain '
+                                         'number is points), got %r' % text) from None
+    return text
+
+
+def _canvas_size(text):
+    try:
+        _canvas(text)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e).replace('canvas_size', '--canvas-size')) from None
+    return text
+
+
 def _font(text):
     old, sep, new = text.partition('=')
     if not sep:                        # a bare NAME replaces every font not named
@@ -61,11 +88,12 @@ def _parser():
         prog='svgslide',
         description='Convert SVG drawings (.svg, .svgz) and PDF files into PowerPoint files (.pptx) '
                     'whose parts are editable shapes, text boxes and pictures. Each input gives one '
-                    '.pptx next to it; an existing output file is overwritten. With -o NAME.svg the '
-                    'converted drawing is written as SVG instead (one page).')
+                    '.pptx next to it; several inputs with -o NAME.pptx give one deck instead. An existing '
+                    'output file is overwritten. With -o NAME.svg the converted drawing is written as SVG '
+                    'instead (one input, one page).')
     p.add_argument('inputs', nargs='+', metavar='INPUT', help='SVG, SVGZ or PDF file (recognised by content)')
-    p.add_argument('-o', '--output', metavar='OUTPUT', help='output .pptx, or .svg for an SVG file (only with '
-                   'one input; default: the input with the suffix .pptx)')
+    p.add_argument('-o', '--output', metavar='OUTPUT', help='output .pptx (several inputs: one slide each, in '
+                   'order), or .svg for an SVG file (one input; default: each input with the suffix .pptx)')
     p.add_argument('--font', action='append', type=_font, default=[], metavar='OLD=NEW',
                    help='replace a font name, e.g. --font "DejaVu Sans=Arial" (repeatable); '
                         'a bare NAME (--font Arial) replaces every font not named')
@@ -80,6 +108,16 @@ def _parser():
     p.add_argument('--precision', type=_precision, metavar='PT',
                    help='round shape outline coordinates to this grid in points, e.g. 0.01 (smaller '
                         'files; default: full precision)')
+    p.add_argument('--scale', type=_scale, metavar='F',
+                   help='make the whole drawing F times larger, text, lines and pictures included')
+    p.add_argument('--width', type=_size, metavar='SIZE',
+                   help='final figure width, e.g. 20cm (units cm, mm, in, pt, px; a plain number is points); '
+                        'the height follows')
+    p.add_argument('--height', type=_size, metavar='SIZE',
+                   help='final figure height, e.g. 12cm; with --width both must match the figure\'s shape')
+    p.add_argument('--canvas-size', type=_canvas_size, metavar='SIZE',
+                   help='slide size with the figure centred on it: widescreen, 4:3, A4, A4-portrait or WxH, '
+                        'e.g. 25cmx14cm; a larger figure is shrunk to fit (default: the figure\'s size)')
     return p
 
 
@@ -101,9 +139,14 @@ def main(argv=None):
         args = parser.parse_args(argv)
     except SystemExit as e:
         return e.code
-    if args.output is not None and len(args.inputs) > 1:
+    deck = args.output is not None and len(args.inputs) > 1
+    if deck and args.output.lower().endswith('.svg'):
         parser.print_usage(sys.stderr)
-        print('svgslide: error: -o/--output works with one input only', file=sys.stderr)
+        print('svgslide: error: -o NAME.svg works with one input only', file=sys.stderr)
+        return 2
+    if args.scale is not None and (args.width is not None or args.height is not None):
+        parser.print_usage(sys.stderr)
+        print('svgslide: error: give --scale or --width/--height, not both', file=sys.stderr)
         return 2
     if sum(1 for old, _ in args.font if old == '*') > 1:
         parser.print_usage(sys.stderr)
@@ -111,32 +154,41 @@ def main(argv=None):
         return 2
     fonts = dict(args.font)
     status = 0
-    for src in args.inputs:
-        dst = args.output if args.output is not None else os.path.splitext(src)[0] + '.pptx'
+    if deck:       # (name for messages, source, output)
+        jobs = [(', '.join(args.inputs), list(args.inputs), args.output)]
+    else:
+        jobs = [(src, src, args.output if args.output is not None else os.path.splitext(src)[0] + '.pptx')
+                for src in args.inputs]
+    for name, src, dst in jobs:
+        # in messages about a deck, the deck is named by its output file
+        where = dst if deck else src
         clash = [i for i in args.inputs if os.path.exists(i) and _same(i, dst)]
         if clash:
-            print('svgslide: %s: not converted: the output %s is an input file' % (src, dst), file=sys.stderr)
+            print('svgslide: %s: not converted: the output %s is an input file' % (name, dst), file=sys.stderr)
             status = 1
             continue
         try:
             rep = convert(src, dst, fonts=fonts or None, pages=args.pages, merge=args.merge,
-                          merge_scope=args.merge_scope, precision=args.precision)
+                          merge_scope=args.merge_scope, precision=args.precision, scale=args.scale,
+                          width=args.width, height=args.height, canvas_size=args.canvas_size)
         except Exception as e:     # one bad file must not stop the others
-            print('svgslide: %s: %s' % (src, e), file=sys.stderr)
+            print('svgslide: %s: %s' % (name, e), file=sys.stderr)
             status = 1
             continue
         print('%s -> %s: %s, %s, %s, %s, %d merged, %d skipped' % (
-            src, dst, _plural(rep.shapes, 'shape'), _plural(rep.text_boxes, 'text box'),
+            name, dst, _plural(rep.shapes, 'shape'), _plural(rep.text_boxes, 'text box'),
             _plural(rep.pictures, 'picture'), _plural(rep.groups, 'group'), rep.merged, len(rep.skipped)))
         if rep.fonts:
             names = []
-            for name in rep.fonts:
-                new = replace(name, fonts)
-                names.append(name if new == name else '%s -> %s' % (name, new))
+            for font in rep.fonts:
+                new = replace(font, fonts)
+                names.append(font if new == font else '%s -> %s' % (font, new))
             # stdout keeps one line per file; details go to stderr
-            print('  fonts in %s: %s' % (src, ', '.join(names)), file=sys.stderr)
+            print('  fonts in %s: %s' % (where, ', '.join(names)), file=sys.stderr)
         for feature, element in rep.skipped:
-            print('  skipped in %s: %s (%s)' % (src, feature, element), file=sys.stderr)
+            print('  skipped in %s: %s (%s)' % (where, feature, element), file=sys.stderr)
+        for note in rep.notes:
+            print('  note in %s: %s' % (where, note), file=sys.stderr)
     return status
 
 

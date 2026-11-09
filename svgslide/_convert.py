@@ -184,9 +184,9 @@ class Converter:
 
     # --- document ------------------------------------------------------
 
-    def run(self):
+    def size(self):
+        """The drawing's own (width, height) in CSS px."""
         root = self.root
-        st = css.cascade(css.ROOT_STYLE, self.spec(root))
         vb = _parse_viewbox(root.get('viewBox'))
         wv, hv = root.get('width'), root.get('height')
         w = None if (wv is None or css.is_percent(wv)) else css.length(wv)
@@ -200,18 +200,32 @@ class Converter:
                 h = w * vb[3] / vb[2]
         w = w if w and w > 0 else 96.0
         h = h if h and h > 0 else 96.0
-        k = dml.EMU_PER_PX
-        if w * k > MAX_SLIDE or h * k > MAX_SLIDE:
-            k = min(MAX_SLIDE / w, MAX_SLIDE / h)
+        return w, h
+
+    def run(self, k=None, offset=None):
+        """The shape tree.  k: EMU per CSS px (default: 1 px = 1/96 inch, the
+        whole drawing at most 56 inch); offset: (x, y) in EMU of the drawing's
+        top left corner on the slide (default 0, 0)."""
+        root = self.root
+        st = css.cascade(css.ROOT_STYLE, self.spec(root))
+        vb = _parse_viewbox(root.get('viewBox'))
+        w, h = self.size()
+        if k is None:
+            k = dml.EMU_PER_PX
+            if w * k > MAX_SLIDE or h * k > MAX_SLIDE:
+                k = min(MAX_SLIDE / w, MAX_SLIDE / h)
         self.slide_w = max(MIN_SLIDE, int(round(w * k)))
         self.slide_h = max(MIN_SLIDE, int(round(h * k)))
         m = g.scale(k)
+        ox, oy = offset or (0.0, 0.0)
+        if ox or oy:
+            m = g.mul(g.translate(ox, oy), m)
         if vb:
             m = g.mul(m, viewbox_transform(vb, w, h, root.get('preserveAspectRatio')))
             self.viewport = [(vb[2], vb[3])]
         else:
             self.viewport = [(w, h)]
-        clip = Clip((0.0, 0.0, w * k, h * k))
+        clip = Clip((ox, oy, ox + w * k, oy + h * k)) if ox or oy else Clip((0.0, 0.0, w * k, h * k))
         alpha = css.number(st.get('opacity', '1'), 1.0)
         nodes = self.children(root, m, st, clip, alpha)
         return dml.collapse(nodes)
