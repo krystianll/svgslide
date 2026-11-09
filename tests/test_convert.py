@@ -1309,6 +1309,9 @@ def test_command_line(tmp_path, capsys):
     assert main([str(a), str(b), '-o', str(tmp_path / 'deck.svg')]) == 2
     assert not (tmp_path / 'deck.svg').exists()
     capsys.readouterr()
+    # --version prints the program name and the package version
+    assert main(['--version']) == 0
+    assert capsys.readouterr().out == 'svgslide %s\n' % svgslide.__version__
     # usage errors: status 2
     for argv in ([str(a), '--font', 'Arial', '--font', 'Times'],
                  [str(a), '--pages', '3-1'], []):

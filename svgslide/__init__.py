@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 from . import _convert, _drawingml, _merge, _package
 
 __all__ = ['convert', 'convert_figure']
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 
 
 class Report:

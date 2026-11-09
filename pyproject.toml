@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "svgslide"
-version = "0.2.0"
+version = "0.2.1"
 description = "Convert an SVG drawing or a PDF into an editable PowerPoint (.pptx) file"
 readme = "README.md"
 license = "MIT"

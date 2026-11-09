@@ -1,5 +1,9 @@
 # Changes
 
+## 0.2.1
+
+- `svgslide --version` prints the version.
+
 ## 0.2.0
 
 - `scale=` / `--scale`: make the whole drawing larger or smaller, text,

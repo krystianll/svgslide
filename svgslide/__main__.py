@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 
-from . import _canvas, _length, convert
+from . import __version__, _canvas, _length, convert
 from ._text import replace
 
 
@@ -91,6 +91,7 @@ def _parser():
                     '.pptx next to it; several inputs with -o NAME.pptx give one deck instead. An existing '
                     'output file is overwritten. With -o NAME.svg the converted drawing is written as SVG '
                     'instead (one input, one page).')
+    p.add_argument('--version', action='version', version='%(prog)s ' + __version__)
     p.add_argument('inputs', nargs='+', metavar='INPUT', help='SVG, SVGZ or PDF file (recognised by content)')
     p.add_argument('-o', '--output', metavar='OUTPUT', help='output .pptx (several inputs: one slide each, in '
                    'order), or .svg for an SVG file (one input; default: each input with the suffix .pptx)')
